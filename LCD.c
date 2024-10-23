@@ -1,6 +1,74 @@
 #include "LCD.h"
 #include "stm32l476xx.h"
 
+// Keypad map	
+char key_map[4][4] = {
+    {'1', '2', '3', 'A'},
+    {'4', '5', '6', 'B'},
+    {'7', '8', '9', 'C'},
+    {'*', '0', '#', 'D'}
+};
+
+// Initialize GPIO pins for the rows and columns
+void Keypad_Init(void) {
+    RCC->AHB2ENR |= RCC_AHB2ENR_GPIOCEN; // Enable clock for GPIOC
+
+    // Configure ROW pins (PC0-PC3) as output (OPEN DRAIN)
+    GPIOC->MODER &= ~(0xFF << (2 * ROW0_PIN));  // Clear mode bits for PC0-PC3
+    GPIOC->MODER |= (0x55 << (2 * ROW0_PIN));   // Set PC0-PC3 as general purpose output
+		GPIOC->OTYPER |= (0xF << ROW0_PIN);         // Set PC0-PC3 as open-drain
+    //GPIOC->OSPEEDR &= ~(0xFF << (2 * ROW0_PIN)); // Set PC0-PC3 low speed
+
+    // Configure COL pins (PC4-PC7) as input
+    GPIOC->MODER &= ~(0xFF << (2 * COL0_PIN));  // Clear mode bits for PC4-PC7
+		GPIOC->PUPDR &= ~(0xFF << (2 * COL0_PIN));  // Clear PUPDR bits for PC4, PC5, PC6, PC7 (no pull-up, no pull-down)
+
+}
+
+// Function to scan the keypad and return the pressed key
+char Keypad_Scan(void) {
+		
+	unsigned char row, col, ColumnPressed;
+	unsigned char key = 0xFF;
+	
+	GPIOC->ODR &= ~(0xF << ROW0_PIN);  // Clear bits PC0, PC1, PC2, PC3 (set to 0)
+	
+	//Delay shortly, and read inputs of column pins
+	delay_ms(20);
+	uint8_t column_input = (GPIOC->IDR >> COL0_PIN) & 0xF;
+	
+	//check if no key is pressed
+	if ((GPIOC->IDR & (0xF << COL0_PIN)) == (0xF << COL0_PIN)) {
+		return 0xFF; // No key is pressed
+	}
+	
+	//identify which column is pressed
+	for(col = 0; col< 4; col++){
+		if ((column_input & (1 << col)) == 0) {
+        ColumnPressed = col;// Column 'col' is pressed (because the bit is low)    
+    }
+	}
+	
+	//identify row of the column pressed
+	for(row = 0; row < 4; row++){
+		//Set the row being checked as 0, with all other rows as 1
+		GPIOC->ODR = (0xF << ROW0_PIN);          // Set all rows (PC0-PC3) to high (1)
+    GPIOC->ODR &= ~(1 << (ROW0_PIN + row));  // Set only the current row to low (0)
+		
+		//read the column inputs after a short delay
+		delay_ms(20);
+		column_input = (GPIOC->IDR >> COL0_PIN) & 0xF; //get column inputs
+		
+		//Check the column inputs
+		if((column_input & (1 << ColumnPressed)) == 0){
+			key = key_map[row][ColumnPressed]; //return key pressed
+		}
+	}
+
+
+   return key;  // No key pressed
+}
+
 //waits for ms milliseconds. 
 void delay_ms(unsigned int ms) {
 	//Configure SysTick
@@ -107,7 +175,7 @@ void LCD_DisplayString(unsigned int line, unsigned char *ptr) {
 	else{LCD_WriteCom(0x80);} //select line 2
 	
 	//loop to step through pointer string
-	for (int ii=0;ii<15;ii++){
+	for (int ii=0;ii<16;ii++){
 		if(ptr[ii]==0x00) //check if character is null
 			break; //break if null
 		LCD_WriteData(ptr[ii]); //write letter to LCD
